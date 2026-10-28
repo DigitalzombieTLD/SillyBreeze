@@ -63,13 +63,13 @@ test('instruction parsing is untouched when disabled', () => {
     assert.deepEqual(parseInstructionParagraphs(original, false), [{ text: original }]);
 });
 
-test('instruction parsing splits paragraphs and consumes only a leading tag', () => {
+test('instruction parsing splits paragraphs and strips instruction tags from speech text', () => {
     assert.deepEqual(parseInstructionParagraphs(
         ' <instructions="Speak like a pirate."> Ahoy!\n\nNo instruction <instructions="leave this">',
         true,
     ), [
         { text: 'Ahoy!', instruction: 'Speak like a pirate.' },
-        { text: 'No instruction <instructions="leave this">' },
+        { text: 'No instruction', instruction: 'leave this' },
     ]);
 });
 
@@ -90,7 +90,7 @@ test('quoted plus parenthetical filter preserves matching spans in paragraph ord
 test('quoted filter retains a leading instruction tag for later parsing', () => {
     assert.equal(
         extractQuotedAndParenthetical('<instructions="gentle">Narration "Hello" (sighs)'),
-        '<instructions="gentle">"Hello" (sighs)',
+        '<instructions="gentle"> "Hello" (sighs)',
     );
 });
 
@@ -245,4 +245,23 @@ test('single-concurrency queue serializes tasks and continues after failures', a
     assert.equal(maximumActive, 1);
     assert.deepEqual(events, ['one:start', 'one:end', 'fail:start', 'fail:end', 'three:start', 'three:end']);
     assert.deepEqual(results.map(result => result.status), ['fulfilled', 'rejected', 'fulfilled']);
+});
+
+test('instruction tags are stripped from speech text in every format', () => {
+    assert.deepEqual(parseInstructionParagraphs('[instruction="whisper"] Hi (sighs) there [instruction="x"]', true, 'square'), [
+        { text: 'Hi (sighs) there', instruction: 'whisper x' },
+    ]);
+    assert.deepEqual(parseInstructionParagraphs('(instruction="calm") Hello (sighs) friend', true, 'round'), [
+        { text: 'Hello (sighs) friend', instruction: 'calm' },
+    ]);
+    assert.deepEqual(parseInstructionParagraphs('Hello <instruction="loud"> there', true, 'angle'), [
+        { text: 'Hello there', instruction: 'loud' },
+    ]);
+    assert.deepEqual(parseInstructionParagraphs('<instruction="loud"> [instruction="a"] Hi', true, 'square'), [
+        { text: '<instruction="loud"> Hi', instruction: 'a' },
+    ]);
+});
+
+test('quoted filter keeps a leading instruction tag in the selected format', () => {
+    assert.equal(extractQuotedAndParenthetical('[instruction="soft"]Narration "Hello" (sighs)', 'square'), '[instruction="soft"] "Hello" (sighs)');
 });

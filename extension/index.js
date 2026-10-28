@@ -11,6 +11,10 @@ const DEFAULT_VOICE_ID = 'breeze-default';
 const DEFAULT_VOICE_NAME = 'Breeze default voice';
 let paragraphSequence = 0;
 
+function randomSeed() {
+    return globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
+}
+
 export class SillyBreezeTtsProvider {
     audioElement = document.createElement('audio');
 
@@ -19,6 +23,8 @@ export class SillyBreezeTtsProvider {
         voices: [],
         cfgScale: 1,
         seed: 42,
+        randomSeed: false,
+        instructionFormat: 'angle',
         paragraphInstructions: false,
         quotedAndParentheticalOnly: false,
     };
@@ -44,6 +50,16 @@ export class SillyBreezeTtsProvider {
                 <label for="sillybreeze-seed">Seed</label>
                 <input id="sillybreeze-seed" class="text_pole" type="number" min="0" max="4294967295" step="1" />
             </div>
+            <label class="checkbox_label">
+                <input id="sillybreeze-random-seed" type="checkbox" />
+                <span>Randomize seed for every generation</span>
+            </label>
+            <label for="sillybreeze-instruction-format">Instruction tag format</label>
+            <select id="sillybreeze-instruction-format" class="text_pole">
+                <option value="angle">&lt;instruction="..."&gt;</option>
+                <option value="square">[instruction="..."]</option>
+                <option value="round">(instruction="...")</option>
+            </select>
             <label class="checkbox_label">
                 <input id="sillybreeze-paragraph-instructions" type="checkbox" />
                 <span>Split blank-line paragraphs and parse leading Breeze instructions</span>
@@ -83,6 +99,10 @@ export class SillyBreezeTtsProvider {
         this.selectedVoiceId = this.settings.voices[0]?.id ?? '';
         this.settings.cfgScale = Number(this.settings.cfgScale);
         this.settings.seed = Number(this.settings.seed);
+        this.settings.randomSeed = Boolean(this.settings.randomSeed);
+        if (!['angle', 'square', 'round'].includes(this.settings.instructionFormat)) {
+            this.settings.instructionFormat = 'angle';
+        }
         this.settings.paragraphInstructions = Boolean(this.settings.paragraphInstructions);
         this.settings.quotedAndParentheticalOnly = Boolean(this.settings.quotedAndParentheticalOnly);
         this.bindSettings();
@@ -91,7 +111,9 @@ export class SillyBreezeTtsProvider {
     bindSettings() {
         $('#sillybreeze-endpoint').val(this.settings.endpoint);
         $('#sillybreeze-cfg-scale').val(this.settings.cfgScale);
-        $('#sillybreeze-seed').val(this.settings.seed);
+        $('#sillybreeze-seed').val(this.settings.seed).prop('disabled', this.settings.randomSeed);
+        $('#sillybreeze-random-seed').prop('checked', this.settings.randomSeed);
+        $('#sillybreeze-instruction-format').val(this.settings.instructionFormat);
         $('#sillybreeze-paragraph-instructions').prop('checked', this.settings.paragraphInstructions);
         $('#sillybreeze-quoted-parenthetical').prop('checked', this.settings.quotedAndParentheticalOnly);
         this.renderVoices();
@@ -113,7 +135,7 @@ export class SillyBreezeTtsProvider {
                 this.refreshVoiceMap();
             }
         });
-        $('#sillybreeze-reference-text').off('.sillybreeze').on('change.sillybreeze', event => {
+        $('#sillybreeze-reference-text').off('.sillybreeze').on('input.sillybreeze change.sillybreeze', event => {
             const voice = this.getSelectedVoice();
             if (voice) {
                 voice.text = String(event.currentTarget.value);
@@ -126,6 +148,15 @@ export class SillyBreezeTtsProvider {
         });
         $('#sillybreeze-seed').off('.sillybreeze').on('change.sillybreeze', event => {
             this.settings.seed = Number(event.currentTarget.value);
+            this.saveSettings();
+        });
+        $('#sillybreeze-random-seed').off('.sillybreeze').on('change.sillybreeze', event => {
+            this.settings.randomSeed = event.currentTarget.checked;
+            $('#sillybreeze-seed').prop('disabled', this.settings.randomSeed);
+            this.saveSettings();
+        });
+        $('#sillybreeze-instruction-format').off('.sillybreeze').on('change.sillybreeze', event => {
+            this.settings.instructionFormat = String(event.currentTarget.value);
             this.saveSettings();
         });
         $('#sillybreeze-paragraph-instructions').off('.sillybreeze').on('change.sillybreeze', event => {
@@ -237,7 +268,7 @@ export class SillyBreezeTtsProvider {
         this.pendingParagraphMarker = null;
         let output = String(text);
         if (this.settings.quotedAndParentheticalOnly) {
-            output = extractQuotedAndParenthetical(output);
+            output = extractQuotedAndParenthetical(output, this.settings.instructionFormat);
         }
         if (!this.settings.paragraphInstructions) {
             return output;
@@ -299,7 +330,7 @@ export class SillyBreezeTtsProvider {
             const parts = marker && String(text).includes(marker)
                 ? String(text).split(marker)
                 : splitParagraphs(text);
-            paragraphs = parts.flatMap(part => parseInstructionParagraphs(part, true));
+            paragraphs = parts.flatMap(part => parseInstructionParagraphs(part, true, this.settings.instructionFormat));
         } else {
             paragraphs = parseInstructionParagraphs(text, false);
         }
@@ -313,7 +344,7 @@ export class SillyBreezeTtsProvider {
                 endpoint: this.settings.endpoint,
                 text: paragraph.text,
                 cfg_scale: this.settings.cfgScale,
-                seed: this.settings.seed,
+                seed: this.settings.randomSeed ? randomSeed() : this.settings.seed,
             };
             if (paragraph.instruction) {
                 body.instruction = paragraph.instruction;
