@@ -1,5 +1,4 @@
 import fs from 'node:fs/promises';
-import multer from 'multer';
 import {
     BreezeUpstreamError,
     MAX_REFERENCE_BYTES,
@@ -19,10 +18,6 @@ export const info = {
 };
 
 const inferenceQueue = createSerialQueue();
-const uploader = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_REFERENCE_BYTES, files: 1, fields: 0 },
-});
 
 function isAuthenticated(request) {
     try {
@@ -37,31 +32,32 @@ function sendError(response, status, error) {
     return response.status(status).json({ error: error instanceof Error ? error.message : String(error) });
 }
 
-function uploadSingleReference(request, response, next) {
-    uploader.single('reference')(request, response, error => {
-        if (!error) {
-            return next();
-        }
-        const status = error.code === 'LIMIT_FILE_SIZE' ? 413 : 400;
-        return sendError(response, status, error);
-    });
-}
-
 export async function init(router) {
-    router.post('/reference', uploadSingleReference, async (request, response) => {
+    router.post('/reference', async (request, response) => {
         if (!isAuthenticated(request)) {
+            if (request.file?.path) {
+                await fs.rm(request.file.path, { force: true }).catch(() => {});
+            }
             return response.sendStatus(403);
         }
-        if (!request.file) {
-            return sendError(response, 400, 'Upload one WAV file in the reference field.');
+        // SillyTavern's global multer middleware only accepts the 'avatar' field and has already saved the upload to disk.
+        const file = request.file;
+        if (!file?.path) {
+            return sendError(response, 400, 'Upload one WAV file in the avatar field.');
         }
 
         try {
+            if (file.size > MAX_REFERENCE_BYTES) {
+                return sendError(response, 413, 'Reference WAV is too large.');
+            }
             const directories = getAuthenticatedUserDirectories(request);
-            const reference = await storeReferenceWav(directories, request.file.originalname, request.file.buffer);
+            const data = await fs.readFile(file.path);
+            const reference = await storeReferenceWav(directories, file.originalname, data);
             return response.json(reference);
         } catch (error) {
             return sendError(response, 400, error);
+        } finally {
+            await fs.rm(file.path, { force: true }).catch(() => {});
         }
     });
 

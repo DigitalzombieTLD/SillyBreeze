@@ -150,7 +150,7 @@ export class SillyBreezeTtsProvider {
         }
         $('#sillybreeze-status').text('Uploading reference WAV…');
         const form = new FormData();
-        form.append('reference', file);
+        form.append('avatar', file);
         try {
             const response = await this.requestJson(`${API_BASE}/reference`, { method: 'POST', body: form });
             const reference = await response.json();
