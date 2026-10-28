@@ -1,0 +1,6 @@
+{
+  "name": "sillybreeze-server-plugin",
+  "private": true,
+  "type": "module",
+  "main": "index.js"
+}
