@@ -25,6 +25,7 @@ export class SillyBreezeTtsProvider {
         seed: 42,
         randomSeed: false,
         instructionFormat: 'angle',
+        mergeInstructionBlankLine: false,
         paragraphInstructions: false,
         quotedAndParentheticalOnly: false,
     };
@@ -65,6 +66,10 @@ export class SillyBreezeTtsProvider {
                 <span>Split blank-line paragraphs and parse leading Breeze instructions</span>
             </label>
             <label class="checkbox_label">
+                <input id="sillybreeze-merge-instruction-blank-line" type="checkbox" />
+                <span>Ignore a blank line after an instruction tag (apply it to the next paragraph)</span>
+            </label>
+            <label class="checkbox_label">
                 <input id="sillybreeze-quoted-parenthetical" type="checkbox" />
                 <span>Send only quoted text and parenthetical tags, such as (sighs)</span>
             </label>
@@ -100,6 +105,7 @@ export class SillyBreezeTtsProvider {
         this.settings.cfgScale = Number(this.settings.cfgScale);
         this.settings.seed = Number(this.settings.seed);
         this.settings.randomSeed = Boolean(this.settings.randomSeed);
+        this.settings.mergeInstructionBlankLine = Boolean(this.settings.mergeInstructionBlankLine);
         if (!['angle', 'square', 'round'].includes(this.settings.instructionFormat)) {
             this.settings.instructionFormat = 'angle';
         }
@@ -113,6 +119,7 @@ export class SillyBreezeTtsProvider {
         $('#sillybreeze-cfg-scale').val(this.settings.cfgScale);
         $('#sillybreeze-seed').val(this.settings.seed).prop('disabled', this.settings.randomSeed);
         $('#sillybreeze-random-seed').prop('checked', this.settings.randomSeed);
+        $('#sillybreeze-merge-instruction-blank-line').prop('checked', this.settings.mergeInstructionBlankLine);
         $('#sillybreeze-instruction-format').val(this.settings.instructionFormat);
         $('#sillybreeze-paragraph-instructions').prop('checked', this.settings.paragraphInstructions);
         $('#sillybreeze-quoted-parenthetical').prop('checked', this.settings.quotedAndParentheticalOnly);
@@ -153,6 +160,10 @@ export class SillyBreezeTtsProvider {
         $('#sillybreeze-random-seed').off('.sillybreeze').on('change.sillybreeze', event => {
             this.settings.randomSeed = event.currentTarget.checked;
             $('#sillybreeze-seed').prop('disabled', this.settings.randomSeed);
+            this.saveSettings();
+        });
+        $('#sillybreeze-merge-instruction-blank-line').off('.sillybreeze').on('change.sillybreeze', event => {
+            this.settings.mergeInstructionBlankLine = event.currentTarget.checked;
             this.saveSettings();
         });
         $('#sillybreeze-instruction-format').off('.sillybreeze').on('change.sillybreeze', event => {
@@ -268,7 +279,7 @@ export class SillyBreezeTtsProvider {
         this.pendingParagraphMarker = null;
         let output = String(text);
         if (this.settings.quotedAndParentheticalOnly) {
-            output = extractQuotedAndParenthetical(output, this.settings.instructionFormat);
+            output = extractQuotedAndParenthetical(output, this.settings.instructionFormat, this.settings.mergeInstructionBlankLine);
         }
         if (!this.settings.paragraphInstructions) {
             return output;
@@ -330,7 +341,12 @@ export class SillyBreezeTtsProvider {
             const parts = marker && String(text).includes(marker)
                 ? String(text).split(marker)
                 : splitParagraphs(text);
-            paragraphs = parts.flatMap(part => parseInstructionParagraphs(part, true, this.settings.instructionFormat));
+            paragraphs = parseInstructionParagraphs(
+                parts.join('\n\n'),
+                true,
+                this.settings.instructionFormat,
+                this.settings.mergeInstructionBlankLine,
+            );
         } else {
             paragraphs = parseInstructionParagraphs(text, false);
         }
