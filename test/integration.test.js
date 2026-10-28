@@ -287,3 +287,10 @@ test('rendered HTML paragraphs and quote tags are normalized before instruction 
     ]);
     assert.equal(normalizeHtmlMarkup('<instruction="x"> a &amp; b'), '<instruction="x"> a & b');
 });
+
+test('wonky HTML paragraphs still split without blank lines', () => {
+    const texts = ['<p>One</p><p></p><p>Two</p>', '<p>One<p>Two', 'One<br>Two', '<p>One</p>\n<p> </p>\n<p>Two</p>'];
+    for (const html of texts) {
+        assert.deepEqual(parseInstructionParagraphs(normalizeHtmlMarkup(html), true).map(item => item.text), ['One', 'Two']);
+    }
+});

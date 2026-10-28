@@ -3,7 +3,7 @@ const ENTITIES = { '&quot;': '"', '&#34;': '"', '&#39;': "'", '&apos;': "'", '&l
 // Converts rendered chat HTML (e.g. <p>, <q>) back to plain text without touching <instruction="..."> tags.
 export function normalizeHtmlMarkup(text) {
     return String(text)
-        .replace(/<\/(?:p|div|li|h[1-6])\s*>|<br\s*\/?>/gi, '\n\n')
+        .replace(/<\/?(?:p|div|li|h[1-6])(?:\s[^<>]*)?\/?>|<br\s*\/?>/gi, '\n\n')
         .replace(/<\/?(?:p|div|li|ul|ol|h[1-6]|q|em|strong|i|b|u|s|span|blockquote|code|pre|br)(?:\s[^<>]*)?\/?>/gi, '')
         .replace(/&(?:quot|apos|lt|gt|nbsp|amp|#34|#39);/g, entity => ENTITIES[entity]);
 }
