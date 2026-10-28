@@ -1,7 +1,7 @@
 import { getRequestHeaders } from '../../../../script.js';
 import { extension_settings } from '../../../extensions.js';
 import { getPreviewString, initVoiceMap, registerTtsProvider, saveTtsProviderSettings } from '../../tts/index.js';
-import { extractQuotedAndParenthetical, parseInstructionParagraphs, splitParagraphs } from './logic.js';
+import { extractQuotedAndParenthetical, normalizeHtmlMarkup, parseInstructionParagraphs, splitParagraphs } from './logic.js';
 
 const API_BASE = '/api/plugins/sillybreeze';
 const PARAGRAPH_MARKER_START = '\uE000SILLYBREEZE_';
@@ -278,6 +278,9 @@ export class SillyBreezeTtsProvider {
     async processText(text) {
         this.pendingParagraphMarker = null;
         let output = String(text);
+        if (this.settings.quotedAndParentheticalOnly || this.settings.paragraphInstructions) {
+            output = normalizeHtmlMarkup(output);
+        }
         if (this.settings.quotedAndParentheticalOnly) {
             output = extractQuotedAndParenthetical(output, this.settings.instructionFormat, this.settings.mergeInstructionBlankLine);
         }

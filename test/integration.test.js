@@ -5,6 +5,7 @@ import path from 'node:path';
 import test from 'node:test';
 import {
     extractQuotedAndParenthetical,
+    normalizeHtmlMarkup,
     parseInstructionParagraphs,
 } from '../extension/logic.js';
 import {
@@ -277,4 +278,19 @@ test('instruction-only paragraph applies to the next paragraph when merging is e
         { text: 'Plain.' },
     ]);
     assert.equal(extractQuotedAndParenthetical('<instruction="calm">\n\n"Hi"', 'angle', true), '<instruction="calm">\n\n"Hi"');
+});
+
+test('rendered HTML paragraphs and quote tags are normalized before instruction parsing', () => {
+    const html = '<p>(instructions=<q>"Say it with a warm, genuine tone."</q>)</p>\n<p><q>"But seriously, what\'s up? </q></p>';
+    assert.deepEqual(parseInstructionParagraphs(normalizeHtmlMarkup(html), true, 'round', true), [
+        { text: '"But seriously, what\'s up?', instruction: 'Say it with a warm, genuine tone.' },
+    ]);
+    assert.equal(normalizeHtmlMarkup('<instruction="x"> a &amp; b'), '<instruction="x"> a & b');
+});
+
+test('wonky HTML paragraphs still split without blank lines', () => {
+    const texts = ['<p>One</p><p></p><p>Two</p>', '<p>One<p>Two', 'One<br>Two', '<p>One</p>\n<p> </p>\n<p>Two</p>'];
+    for (const html of texts) {
+        assert.deepEqual(parseInstructionParagraphs(normalizeHtmlMarkup(html), true).map(item => item.text), ['One', 'Two']);
+    }
 });
