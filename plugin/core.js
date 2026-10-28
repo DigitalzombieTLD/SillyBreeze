@@ -174,7 +174,8 @@ export function createSpeechForm(options, referenceAudio) {
     if (options.instruction) {
         form.set('instruction', options.instruction);
     }
-    form.set('cfg_scale', String(options.cfgScale));
+    // Breeze only defines a negative prompt for instruction templates; plain TTS/cloning requires cfg_scale=1.
+    form.set('cfg_scale', String(options.instruction ? options.cfgScale : 1));
     form.set('seed', String(options.seed));
     if (referenceAudio) {
         form.set('ref_audio', new Blob([referenceAudio], { type: 'audio/wav' }), 'reference.wav');
