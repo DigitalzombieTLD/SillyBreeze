@@ -265,3 +265,16 @@ test('instruction tags are stripped from speech text in every format', () => {
 test('quoted filter keeps a leading instruction tag in the selected format', () => {
     assert.equal(extractQuotedAndParenthetical('[instruction="soft"]Narration "Hello" (sighs)', 'square'), '[instruction="soft"] "Hello" (sighs)');
 });
+
+test('instruction-only paragraph applies to the next paragraph when merging is enabled', () => {
+    const input = '<instruction="calm">\n\nHello there.\n\nPlain.';
+    assert.deepEqual(parseInstructionParagraphs(input, true, 'angle', true), [
+        { text: 'Hello there.', instruction: 'calm' },
+        { text: 'Plain.' },
+    ]);
+    assert.deepEqual(parseInstructionParagraphs(input, true, 'angle', false), [
+        { text: 'Hello there.' },
+        { text: 'Plain.' },
+    ]);
+    assert.equal(extractQuotedAndParenthetical('<instruction="calm">\n\n"Hi"', 'angle', true), '<instruction="calm">\n\n"Hi"');
+});
