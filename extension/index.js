@@ -1,11 +1,14 @@
 import { getRequestHeaders } from '../../../../script.js';
-import { getPreviewString, registerTtsProvider, saveTtsProviderSettings } from '../../tts/index.js';
+import { extension_settings } from '../../../extensions.js';
+import { getPreviewString, initVoiceMap, registerTtsProvider, saveTtsProviderSettings } from '../../tts/index.js';
 import { extractQuotedAndParenthetical, parseInstructionParagraphs, splitParagraphs } from './logic.js';
 
 const API_BASE = '/api/plugins/sillybreeze';
 const PARAGRAPH_MARKER_START = '\uE000SILLYBREEZE_';
 const PARAGRAPH_MARKER_END = '\uE001';
 const REFERENCE_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const DEFAULT_VOICE_ID = 'breeze-default';
+const DEFAULT_VOICE_NAME = 'Breeze default voice';
 let paragraphSequence = 0;
 
 export class SillyBreezeTtsProvider {
@@ -13,9 +16,7 @@ export class SillyBreezeTtsProvider {
 
     defaultSettings = {
         endpoint: 'http://127.0.0.1:7860',
-        referenceId: '',
-        referenceName: '',
-        referenceText: '',
+        voices: [],
         cfgScale: 1,
         seed: 42,
         paragraphInstructions: false,
@@ -26,16 +27,19 @@ export class SillyBreezeTtsProvider {
         <div class="sillybreeze-settings">
             <label for="sillybreeze-endpoint">Breeze API base URL</label>
             <input id="sillybreeze-endpoint" class="text_pole" type="url" autocomplete="url" />
-            <label for="sillybreeze-reference">Reference WAV</label>
-            <div class="sillybreeze-reference-row">
-                <input id="sillybreeze-reference" type="file" accept=".wav,audio/wav,audio/x-wav" />
-                <button id="sillybreeze-delete-reference" class="menu_button">Delete reference</button>
-            </div>
-            <div id="sillybreeze-reference-name" class="sillybreeze-status"></div>
+            <label for="sillybreeze-voice-select">Reference voices</label>
+            <select id="sillybreeze-voice-select" class="text_pole"></select>
+            <label for="sillybreeze-voice-name">Voice name</label>
+            <input id="sillybreeze-voice-name" class="text_pole" type="text" />
             <label for="sillybreeze-reference-text">Exact reference transcript</label>
             <textarea id="sillybreeze-reference-text" class="text_pole" rows="3"></textarea>
+            <label for="sillybreeze-reference">Add voice from reference WAV</label>
+            <div class="sillybreeze-reference-row">
+                <input id="sillybreeze-reference" type="file" accept=".wav,audio/wav,audio/x-wav" />
+                <button id="sillybreeze-delete-reference" class="menu_button">Delete voice</button>
+            </div>
             <div class="sillybreeze-number-row">
-                <label for="sillybreeze-cfg-scale">CFG scale</label>
+                <label for="sillybreeze-cfg-scale" title="Only applied to requests with a leading instruction; otherwise Breeze requires 1.">CFG scale</label>
                 <input id="sillybreeze-cfg-scale" class="text_pole" type="number" min="0" max="100" step="0.1" />
                 <label for="sillybreeze-seed">Seed</label>
                 <input id="sillybreeze-seed" class="text_pole" type="number" min="0" max="4294967295" step="1" />
@@ -66,10 +70,17 @@ export class SillyBreezeTtsProvider {
             ...this.defaultSettings,
             ...(settings && typeof settings === 'object' ? settings : {}),
         };
-        if (!REFERENCE_ID_PATTERN.test(this.settings.referenceId)) {
-            this.settings.referenceId = '';
-            this.settings.referenceName = '';
+        const legacy = this.settings;
+        if (REFERENCE_ID_PATTERN.test(legacy.referenceId) && !Array.isArray(settings?.voices)) {
+            this.settings.voices = [{ id: legacy.referenceId, name: 'Reference voice', text: legacy.referenceText ?? '' }];
         }
+        delete this.settings.referenceId;
+        delete this.settings.referenceName;
+        delete this.settings.referenceText;
+        this.settings.voices = (Array.isArray(this.settings.voices) ? this.settings.voices : [])
+            .filter(voice => voice && REFERENCE_ID_PATTERN.test(voice.id))
+            .map(voice => ({ id: voice.id, name: String(voice.name || 'Reference voice'), text: String(voice.text ?? '') }));
+        this.selectedVoiceId = this.settings.voices[0]?.id ?? '';
         this.settings.cfgScale = Number(this.settings.cfgScale);
         this.settings.seed = Number(this.settings.seed);
         this.settings.paragraphInstructions = Boolean(this.settings.paragraphInstructions);
@@ -79,20 +90,35 @@ export class SillyBreezeTtsProvider {
 
     bindSettings() {
         $('#sillybreeze-endpoint').val(this.settings.endpoint);
-        $('#sillybreeze-reference-text').val(this.settings.referenceText);
         $('#sillybreeze-cfg-scale').val(this.settings.cfgScale);
         $('#sillybreeze-seed').val(this.settings.seed);
         $('#sillybreeze-paragraph-instructions').prop('checked', this.settings.paragraphInstructions);
         $('#sillybreeze-quoted-parenthetical').prop('checked', this.settings.quotedAndParentheticalOnly);
-        this.updateReferenceLabel();
+        this.renderVoices();
 
         $('#sillybreeze-endpoint').off('.sillybreeze').on('change.sillybreeze', event => {
             this.settings.endpoint = String(event.currentTarget.value).trim();
             this.saveSettings();
         });
+        $('#sillybreeze-voice-select').off('.sillybreeze').on('change.sillybreeze', event => {
+            this.selectedVoiceId = String(event.currentTarget.value);
+            this.renderVoices();
+        });
+        $('#sillybreeze-voice-name').off('.sillybreeze').on('change.sillybreeze', event => {
+            const voice = this.getSelectedVoice();
+            if (voice) {
+                voice.name = String(event.currentTarget.value).trim() || 'Reference voice';
+                this.renderVoices();
+                this.saveSettings();
+                this.refreshVoiceMap();
+            }
+        });
         $('#sillybreeze-reference-text').off('.sillybreeze').on('change.sillybreeze', event => {
-            this.settings.referenceText = String(event.currentTarget.value);
-            this.saveSettings();
+            const voice = this.getSelectedVoice();
+            if (voice) {
+                voice.text = String(event.currentTarget.value);
+                this.saveSettings();
+            }
         });
         $('#sillybreeze-cfg-scale').off('.sillybreeze').on('change.sillybreeze', event => {
             this.settings.cfgScale = Number(event.currentTarget.value);
@@ -122,11 +148,27 @@ export class SillyBreezeTtsProvider {
         saveTtsProviderSettings();
     }
 
-    updateReferenceLabel() {
-        $('#sillybreeze-reference-name').text(this.settings.referenceName
-            ? `Selected: ${this.settings.referenceName}`
-            : 'No reference WAV uploaded.');
-        $('#sillybreeze-delete-reference').prop('disabled', !this.settings.referenceId);
+    getSelectedVoice() {
+        return this.settings.voices.find(voice => voice.id === this.selectedVoiceId);
+    }
+
+    renderVoices() {
+        const select = $('#sillybreeze-voice-select').empty();
+        for (const voice of this.settings.voices) {
+            select.append($('<option />').val(voice.id).text(voice.name));
+        }
+        if (!this.settings.voices.length) {
+            select.append($('<option />').val('').text('No reference voices uploaded'));
+        }
+        const voice = this.getSelectedVoice();
+        select.val(voice?.id ?? '');
+        $('#sillybreeze-voice-name').val(voice?.name ?? '').prop('disabled', !voice);
+        $('#sillybreeze-reference-text').val(voice?.text ?? '').prop('disabled', !voice);
+        $('#sillybreeze-delete-reference').prop('disabled', !voice);
+    }
+
+    refreshVoiceMap() {
+        initVoiceMap().catch(error => console.warn('SillyBreeze: could not refresh voice map', error));
     }
 
     async requestJson(url, options = {}) {
@@ -154,15 +196,13 @@ export class SillyBreezeTtsProvider {
         try {
             const response = await this.requestJson(`${API_BASE}/reference`, { method: 'POST', body: form });
             const reference = await response.json();
-            const previousId = this.settings.referenceId;
-            this.settings.referenceId = reference.id;
-            this.settings.referenceName = reference.name;
-            this.updateReferenceLabel();
+            const baseName = String(file.name).replace(/\.wav$/i, '').trim() || 'Reference voice';
+            this.settings.voices.push({ id: reference.id, name: baseName, text: '' });
+            this.selectedVoiceId = reference.id;
+            this.renderVoices();
             this.saveSettings();
-            if (previousId && previousId !== reference.id) {
-                await this.removeReference(previousId).catch(() => {});
-            }
-            $('#sillybreeze-status').text('Reference WAV uploaded.');
+            this.refreshVoiceMap();
+            $('#sillybreeze-status').text('Voice added. Enter the exact transcript of the reference audio.');
         } catch (error) {
             $('#sillybreeze-status').text(`Upload failed: ${error.message}`);
         } finally {
@@ -175,17 +215,19 @@ export class SillyBreezeTtsProvider {
     }
 
     async deleteReference() {
-        if (!this.settings.referenceId) {
+        const voice = this.getSelectedVoice();
+        if (!voice) {
             return;
         }
-        $('#sillybreeze-status').text('Deleting reference WAV…');
+        $('#sillybreeze-status').text('Deleting voice…');
         try {
-            await this.removeReference(this.settings.referenceId);
-            this.settings.referenceId = '';
-            this.settings.referenceName = '';
-            this.updateReferenceLabel();
+            await this.removeReference(voice.id);
+            this.settings.voices = this.settings.voices.filter(item => item.id !== voice.id);
+            this.selectedVoiceId = this.settings.voices[0]?.id ?? '';
+            this.renderVoices();
             this.saveSettings();
-            $('#sillybreeze-status').text('Reference WAV deleted.');
+            this.refreshVoiceMap();
+            $('#sillybreeze-status').text('Voice deleted.');
         } catch (error) {
             $('#sillybreeze-status').text(`Delete failed: ${error.message}`);
         }
@@ -219,18 +261,22 @@ export class SillyBreezeTtsProvider {
     }
 
     async fetchTtsVoiceObjects() {
-        return [{ name: 'Breeze reference voice', voice_id: 'breeze-reference', lang: 'en' }];
+        return [
+            { name: DEFAULT_VOICE_NAME, voice_id: DEFAULT_VOICE_ID, lang: 'en' },
+            ...this.settings.voices.map(voice => ({ name: voice.name, voice_id: voice.id, lang: 'en' })),
+        ];
     }
 
     async getVoice(voiceName) {
-        return { name: voiceName, voice_id: 'breeze-reference', lang: 'en' };
+        const voices = await this.fetchTtsVoiceObjects();
+        return voices.find(voice => voice.voice_id === voiceName || voice.name === voiceName) ?? voices[0];
     }
 
-    async previewTtsVoice() {
+    async previewTtsVoice(voiceId) {
         const audio = this.audioElement;
         audio.pause();
         audio.currentTime = 0;
-        const generator = this.generateTts(getPreviewString());
+        const generator = this.generateTts(getPreviewString(), voiceId);
         const { value: response, done } = await generator.next();
         if (done || !response?.ok) {
             throw new Error('Breeze could not generate a preview.');
@@ -241,7 +287,12 @@ export class SillyBreezeTtsProvider {
         await audio.play();
     }
 
-    async *generateTts(text) {
+    async *generateTts(text, voiceId) {
+        const voice = this.settings.voices.find(item => item.id === voiceId || item.name === voiceId);
+        if (voice && !voice.text.trim()) {
+            throw new Error(`Voice "${voice.name}" needs its exact reference transcript.`);
+        }
+
         let paragraphs;
         if (this.settings.paragraphInstructions) {
             const marker = this.pendingParagraphMarker;
@@ -267,9 +318,9 @@ export class SillyBreezeTtsProvider {
             if (paragraph.instruction) {
                 body.instruction = paragraph.instruction;
             }
-            if (this.settings.referenceId) {
-                body.ref_audio_id = this.settings.referenceId;
-                body.ref_text = this.settings.referenceText;
+            if (voice) {
+                body.ref_audio_id = voice.id;
+                body.ref_text = voice.text;
             }
 
             const response = await this.requestJson(`${API_BASE}/speech`, {
@@ -284,4 +335,8 @@ export class SillyBreezeTtsProvider {
 
 export async function init() {
     registerTtsProvider('SillyBreeze', SillyBreezeTtsProvider);
+    // SillyTavern selects the stored provider before third-party providers register their option.
+    if (extension_settings.tts?.currentProvider === 'SillyBreeze') {
+        $('#tts_provider').val('SillyBreeze');
+    }
 }

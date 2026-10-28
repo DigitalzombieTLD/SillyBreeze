@@ -25,8 +25,8 @@ The frontend registers the provider using the exported `registerTtsProvider` fun
 
 1. Start Breeze's persistent API process separately on the Breeze machine. SillyBreeze never starts, stops, or manages the model process.
 2. Set **Breeze API base URL** to a URL reachable from the SillyTavern server. The default is `http://127.0.0.1:7860`; for separate machines, use Breeze's numeric LAN address, for example `http://192.168.1.25:7860`.
-3. Upload a reference WAV in the provider settings and enter its exact transcript. The browser uploads the audio to SillyTavern's authenticated server plugin, which stores it under the current user's data. Provider settings retain only the opaque reference ID and generated filename. Replacing a reference deletes the previous file when possible; use **Delete reference** to remove it explicitly.
-4. Choose the CFG scale and deterministic seed. Defaults are `1` and `42`.
+3. Upload one or more reference WAVs in the provider settings; each becomes a named voice. Enter each voice's exact transcript. The browser uploads the audio to SillyTavern's authenticated server plugin, which stores it under the current user's data; provider settings retain only opaque IDs, names, and transcripts. Assigned voices appear in SillyTavern's voice map (enable TTS first), alongside a built-in "Breeze default voice" that uses no reference. **Delete voice** removes the selected voice and its file.
+4. Choose the CFG scale and deterministic seed. Defaults are `1` and `42`. Breeze only supports CFG other than `1` for requests with a leading instruction, so the plugin sends `cfg_scale=1` otherwise.
 
 The Breeze server must accept connections from the SillyTavern server. The browser talks only to SillyTavern's same-origin authenticated plugin endpoint, so Breeze does not need browser CORS access. Use HTTPS if configured on the Breeze endpoint; plain HTTP sends text and reference audio unencrypted on the LAN. No API key is supported or required.
 

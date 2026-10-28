@@ -183,6 +183,9 @@ test('speech multipart contains only supported Breeze fields and optional refere
     assert.equal(noInstruction.has('instruction'), false);
     assert.equal(noInstruction.has('ref_audio'), false);
     assert.equal(noInstruction.has('ref_text'), false);
+
+    const plainWithCfg = createSpeechForm({ text: 'Hello', cfgScale: 4, seed: 42, refText: 'x' }, referenceWav);
+    assert.equal(plainWithCfg.get('cfg_scale'), '1');
 });
 
 test('speech proxy sends one supported request and rejects redirects', async () => {
