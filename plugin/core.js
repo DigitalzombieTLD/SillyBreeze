@@ -138,10 +138,11 @@ export async function deleteReferenceWav(userDirectories, id) {
 
 export function getAuthenticatedUserDirectories(request) {
     const directories = request?.user?.directories;
-    if (!directories || typeof directories.files !== 'string' || !path.isAbsolute(directories.files)) {
+    if (!directories || typeof directories.files !== 'string' || !directories.files) {
         throw new Error('Authenticated user storage is unavailable.');
     }
-    return directories;
+    // SillyTavern's data root may be relative (default './data').
+    return { ...directories, files: path.resolve(directories.files) };
 }
 
 export function validateSpeechOptions(input) {
